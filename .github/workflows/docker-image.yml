@@ -1,0 +1,65 @@
+name: Build & publish API image
+
+# Builds the self-hosted API container and publishes it to the GitHub
+# Container Registry (ghcr.io) so anyone can pull a ready-made image instead
+# of building locally.
+#
+# Triggers:
+#   * push to main            -> tag :main  and :sha-<commit>
+#   * push a tag  v1.2.3      -> tags :1.2.3, :1.2, :latest
+#   * manual "Run workflow"   -> tag :main
+#
+# Pull it afterwards with, e.g.:
+#   docker pull ghcr.io/<owner>/hydra-selfhosted:latest
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ${{ github.repository_owner }}/hydra-selfhosted
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # required to push to ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

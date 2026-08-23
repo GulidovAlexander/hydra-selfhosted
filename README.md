@@ -158,3 +158,22 @@ aware of the following:
   put the API behind your own reverse proxy for anything beyond a home LAN.
 - **No rate limiting** on `/auth/login` or registration — fine on a private
   network, not for the open internet.
+
+## Running from the published image
+
+Once the `Build & publish API image` GitHub Action has run, a ready-made image
+is available and you can skip building locally:
+
+```bash
+docker pull ghcr.io/GulidovAlexander/hydra-selfhosted:latest
+```
+
+To use it in `docker-compose.yml`, replace the `build:` block of the `api`
+service with:
+
+```yaml
+    image: ghcr.io/GulidovAlexander/hydra-selfhosted:latest
+```
+
+Make the image public in your repo's **Packages** settings if you want others
+to pull it without authenticating.
