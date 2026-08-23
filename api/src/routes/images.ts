@@ -6,6 +6,16 @@ import { db, IMAGES_DIR } from "../db";
 import { requireAuth } from "./auth";
 import { signAccess, verifyToken } from "../auth";
 
+// Reject any filename that could escape IMAGES_DIR (path traversal). Uploads
+// only ever create `<uuid>.<ext>` names, so a plain basename check is enough
+// and never rejects a legitimately stored image.
+function safeImageName(name: string): string | null {
+  if (!name || name.includes("/") || name.includes("\\") || name.includes("\0")) return null;
+  if (name === "." || name === ".." || name.includes("..")) return null;
+  if (path.basename(name) !== name) return null;
+  return name;
+}
+
 export async function imagesRoutes(app: FastifyInstance) {
   app.post(
     "/presigned-urls/:type",
@@ -52,14 +62,16 @@ export async function imagesRoutes(app: FastifyInstance) {
         return reply.code(401).send({ error: "invalid token" });
       }
 
-      const filePath = path.join(IMAGES_DIR, req.params.filename);
+      const filename = safeImageName(req.params.filename);
+      if (!filename) return reply.code(400).send({ error: "invalid filename" });
+      const filePath = path.join(IMAGES_DIR, filename);
       await fs.promises.writeFile(filePath, req.body as Buffer);
 
       const { type, userId } = req.query;
       if (type === "profile-image") {
-        db.prepare("UPDATE users SET profile_image_url = ? WHERE id = ?").run(`/images/${req.params.filename}`, userId);
+        db.prepare("UPDATE users SET profile_image_url = ? WHERE id = ?").run(`/images/${filename}`, userId);
       } else {
-        db.prepare("UPDATE users SET background_image_url = ? WHERE id = ?").run(`/images/${req.params.filename}`, userId);
+        db.prepare("UPDATE users SET background_image_url = ? WHERE id = ?").run(`/images/${filename}`, userId);
       }
 
       return {};
@@ -72,10 +84,12 @@ export async function imagesRoutes(app: FastifyInstance) {
       req: FastifyRequest<{ Params: { filename: string } }>,
       reply: FastifyReply
     ) => {
-      const filePath = path.join(IMAGES_DIR, req.params.filename);
+      const filename = safeImageName(req.params.filename);
+      if (!filename) return reply.code(400).send({ error: "invalid filename" });
+      const filePath = path.join(IMAGES_DIR, filename);
       if (!fs.existsSync(filePath)) return reply.code(404).send({ error: "not found" });
 
-      const ext = path.extname(req.params.filename).slice(1).toLowerCase();
+      const ext = path.extname(filename).slice(1).toLowerCase();
       const mimeMap: Record<string, string> = {
         jpg: "image/jpeg", jpeg: "image/jpeg",
         png: "image/png", gif: "image/gif",

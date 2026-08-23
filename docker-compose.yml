@@ -1,12 +1,35 @@
+name: hydra-selfhosted
+
+# ---------------------------------------------------------------------------
+#   docker compose up -d --build          # API only, http://127.0.0.1:3000
+#   docker compose --profile https up -d  # + Caddy TLS on :8443 (passkeys!)
+#
+# Everything the container may write lives in the `api-data` volume; the root
+# filesystem is mounted read-only and all Linux capabilities are dropped.
+# ---------------------------------------------------------------------------
+
 services:
   api:
-    build: ./api
+    build:
+      context: ./api
+      # This host's rootless-Docker bridge has no outbound egress (see README),
+      # so the build needs the host netns to reach npm/apk. Drop this line once
+      # `docker run --rm alpine ping -c1 1.1.1.1` works on the default network.
+      network: host
+    image: hydra-selfhosted-api:local
+    restart: unless-stopped
+
+    # Loopback only by default — deliberately. Set BIND_ADDR=0.0.0.0 in .env
+    # (or better, the server's LAN IP) once you actually want other devices in.
     ports:
-      - "${PORT:-3005}:3000"
-    volumes:
-      - ./data:/data
+      - "${BIND_ADDR:-127.0.0.1}:${PORT:-3000}:3000"
+
     environment:
-      - API_TOKEN=${API_TOKEN:-change-me}
+      # JWT signing secret AND the token every launcher client is given.
+      - API_TOKEN=${API_TOKEN:?API_TOKEN is required — put a random string in .env}
+      # Guards /admin/* and /auth/verify-instance. With this empty, every
+      # /admin route is reachable with no credentials at all. Keep it set.
+      - INSTANCE_TOKEN=${INSTANCE_TOKEN:?INSTANCE_TOKEN is required — see .env.example}
       - PORT=3000
       - SESSION_TTL_DAYS=${SESSION_TTL_DAYS:-30}
       - PUBLIC_URL=${PUBLIC_URL:-}
@@ -14,5 +37,75 @@ services:
       - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME:-}
       - WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID:-}
       - WEBAUTHN_ORIGIN=${WEBAUTHN_ORIGIN:-}
+      # Empty = "reflect any Origin". Always list your real origins here.
       - CORS_ORIGINS=${CORS_ORIGINS:-}
+
+    volumes:
+      - api-data:/data
+
+    # ---- hardening -------------------------------------------------------
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: 2.0
+    mem_limit: 1g
+    memswap_limit: 1g
+    # ----------------------------------------------------------------------
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - hydra
+
+  # Optional TLS terminator. WebAuthn/passkeys require a secure context, so
+  # over a LAN IP they only work behind this. It also stops API_TOKEN and
+  # session JWTs from crossing your Wi-Fi in cleartext.
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: ["https"]
     restart: unless-stopped
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${HTTPS_PORT:-8443}:8443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    cap_drop:
+      - ALL
+    cap_add:
+      # Caddy binds :8443 as non-root; it needs this only for ports < 1024.
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    cpus: 1.0
+    mem_limit: 256m
+    memswap_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - hydra
+
+networks:
+  hydra:
+    driver: bridge
+
+volumes:
+  api-data:
+  caddy-data:
+  caddy-config:

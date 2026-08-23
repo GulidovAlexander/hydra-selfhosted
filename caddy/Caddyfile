@@ -1,0 +1,27 @@
+# Self-signed internal CA — good enough for a LAN, and it gives you the secure
+# context that WebAuthn/passkeys refuse to work without.
+#
+# Replace the address with your server's hostname or LAN IP, then trust
+# caddy's root CA on each client:
+#   docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt .
+{
+	admin off
+	auto_https disable_redirects
+}
+
+https://{$SERVER_NAME:localhost}:8443 {
+	tls internal
+
+	encode zstd gzip
+
+	# Conservative baseline; loosen only if a page actually breaks.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	reverse_proxy api:3000
+}

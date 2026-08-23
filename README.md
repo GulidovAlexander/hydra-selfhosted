@@ -63,11 +63,33 @@ The [entitybtw/hydra](https://github.com/entitybtw/hydra) fork's Big Picture mod
 git clone https://github.com/entitybtw/hydra-selfhosted.git
 cd hydra-selfhosted
 cp .env.example .env
-# edit .env — set API_TOKEN to a random secret string
+# edit .env — set BOTH secrets (compose refuses to start otherwise):
+#   API_TOKEN       — random string, handed to launcher clients
+#   INSTANCE_TOKEN  — different random string, guards the /admin routes
+# openssl rand -hex 32   generates a good value for each
 docker compose up -d --build
 ```
 
-The server runs on port 3000 by default.
+The server runs on port 3000, bound to `127.0.0.1` by default (this machine
+only). To let other devices on your LAN reach it, set `BIND_ADDR` in `.env` to
+`0.0.0.0` or, better, to the server's LAN IP (e.g. `192.168.1.50`), then
+`docker compose up -d`.
+
+The container runs unprivileged (uid 1000), with a read-only root filesystem,
+all Linux capabilities dropped, and `no-new-privileges` — only `./data` (a
+named volume) is writable.
+
+### Optional: HTTPS / passkeys
+
+Passkeys (WebAuthn) require a secure context, so over a LAN IP they only work
+behind TLS. An optional Caddy terminator is included:
+
+```bash
+docker compose --profile https up -d   # serves https on :8443
+```
+
+Set `SERVER_NAME` and the `WEBAUTHN_*` / `CORS_ORIGINS` values in `.env` to
+your real host first.
 
 ## .env options
 
@@ -114,3 +136,25 @@ git fetch origin && git checkout origin/main -- api/ docker-compose.yml && docke
 ```
 
 Your `.env` and `data/` are never touched by updates.
+
+## Security notes
+
+This backend was written for a trusted LAN. Before exposing it more widely, be
+aware of the following:
+
+- **`INSTANCE_TOKEN` is mandatory.** The `/admin/*` routes (list / create /
+  edit / delete any user, including resetting passwords) are protected *only*
+  by this token. If it is unset, those routes are reachable with no
+  credentials at all — anyone who can reach the port can take over any account.
+  The bundled `docker-compose.yml` refuses to start until it is set.
+- **`API_TOKEN` is effectively an admin credential.** It doubles as the JWT
+  signing key, so whoever holds it can mint a valid session for any account.
+  Hand it only to devices you trust, and keep it distinct from `INSTANCE_TOKEN`.
+- **Set `CORS_ORIGINS`.** Left empty, the API reflects any `Origin` and allows
+  credentials, so any website you visit could call the API from your browser.
+  List your real origins (e.g. `http://192.168.1.50:3000`).
+- **No transport encryption by default.** Over plain HTTP on a LAN, tokens and
+  passwords cross the network in cleartext. Use the `https` profile (above) or
+  put the API behind your own reverse proxy for anything beyond a home LAN.
+- **No rate limiting** on `/auth/login` or registration — fine on a private
+  network, not for the open internet.
