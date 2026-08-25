@@ -694,6 +694,14 @@ export async function profileRoutes(app: FastifyInstance) {
     }
   );
 
+  // Achievement souvenirs — the launcher fetches remote achievement images here.
+  // Self-hosted has no souvenir store, so return an empty list (204-style) rather
+  // than 404, which the launcher's cloud-save/achievement flow would surface as an
+  // error.
+  app.get("/users/:userId/games/achievements", async () => {
+    return [];
+  });
+
   app.get("/users/:userId/reviews", async (req: FastifyRequest<{ Params: { userId: string }; Querystring: { take?: string; skip?: string } }>) => {
     const take = parseInt(req.query.take ?? "20");
     const skip = parseInt(req.query.skip ?? "0");
