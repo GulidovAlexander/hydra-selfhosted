@@ -68,7 +68,9 @@ export async function friendsRoutes(app: FastifyInstance) {
         return user ? formatFriend(user, f, myId) : null;
       }).filter(Boolean);
 
-      return { results, total: results.length };
+      // `results`/`total` for older clients; `friends`/`onlineFriends` for the
+      // 4.1.x launcher (self-hosted has no presence tracking, so 0 online).
+      return { results, total: results.length, friends: results, onlineFriends: 0 };
     }
   );
 
