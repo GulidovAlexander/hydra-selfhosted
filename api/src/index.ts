@@ -16,6 +16,7 @@ import { publicApiRoutes } from "./routes/public-api";
 import { docsRoutes } from "./routes/docs";
 import { passkeyRoutes } from "./routes/passkeys";
 import { adminRoutes } from "./routes/admin";
+import { ludusaviRoutes } from "./routes/ludusavi";
 import { startSteamSyncScheduler } from "./steam-sync";
 
 const maxSaveSizeMb = Number(process.env.MAX_SAVE_SIZE_MB) || 50;
@@ -64,6 +65,7 @@ app.register(publicApiRoutes);
 app.register(docsRoutes);
 app.register(passkeyRoutes);
 app.register(adminRoutes);
+app.register(ludusaviRoutes);
 
 app.get("/health", async () => ({ status: "ok" }));
 

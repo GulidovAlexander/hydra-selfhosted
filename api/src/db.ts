@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
 
-const DATA_DIR = process.env.DATA_DIR ?? "/data";
+export const DATA_DIR = process.env.DATA_DIR ?? "/data";
 export const ARTIFACTS_DIR = path.join(DATA_DIR, "artifacts");
 export const IMAGES_DIR = path.join(DATA_DIR, "images");
 export const CLOUD_SAVES_DIR = path.join(DATA_DIR, "cloud-saves");
