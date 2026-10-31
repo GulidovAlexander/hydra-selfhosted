@@ -17,9 +17,10 @@ features unlock without Hydra Cloud.
 
 ## Stack & layout
 
-- **Runtime:** Node 20+/22, TypeScript, **Fastify 5**, **better-sqlite3** (a
-  single SQLite file in WAL mode). No ORM — raw prepared statements.
-- **Auth:** JWT (`jsonwebtoken`), bcrypt for passwords, optional WebAuthn
+- **Runtime:** Node 22 (`node:22-alpine3.22` in `api/Dockerfile`), TypeScript,
+  **Fastify 5**, **better-sqlite3** (a single SQLite file in WAL mode). No ORM —
+  raw prepared statements.
+- **Auth:** JWT (`jsonwebtoken`), `bcryptjs` for passwords, optional WebAuthn
   passkeys (`@simplewebauthn/server`).
 - `api/src/index.ts` — Fastify bootstrap, content-type parsers, route
   registration. `bodyLimit`/multipart limit = `MAX_SAVE_SIZE_MB`.
@@ -27,7 +28,7 @@ features unlock without Hydra Cloud.
 - `api/src/db.ts` — schema, idempotent migrations (`ALTER TABLE ... catch {}`),
   `enforceInitialAdmin()`. Data dirs are created here.
 - `api/src/routes/*.ts` — one file per area. `web.ts` is the server-rendered
-  dashboard/profile HTML (large; string templates, `h()` escapes HTML).
+  dashboard/profile HTML (over 1600 lines; string templates, `h()` escapes HTML).
 - Everything persists under `DATA_DIR` (default `/data`):
   `hydra.db`, `images/` (avatars/banners), `cloud-saves/` (content-addressed
   `<sha256>.blob`), `artifacts/` (legacy v1 saves).
@@ -43,6 +44,11 @@ docker compose up -d --build
 ```
 
 `npm run build` = `tsc` → `dist/`. Container `CMD` runs `node dist/index.js`.
+There are no tests and no lint script; `npm run build` is the only check.
+
+`api/dist/` is tracked in git but is not rebuilt on every commit (it has no
+`routes/ludusavi.js`). The Docker image compiles `src/` itself, so do not edit
+`dist/` by hand and do not treat it as the source of truth.
 
 ## Environment (see .env.example)
 
@@ -50,7 +56,7 @@ docker compose up -d --build
 |---|---|---|
 | `API_TOKEN` | **yes** | JWT signing key **and** the token clients present. Effectively an admin credential. |
 | `INSTANCE_TOKEN` | **yes** | Guards `/admin/*` and `/auth/verify-instance`. If unset, those routes are open to anyone. |
-| `CORS_ORIGINS` | strongly | Comma-separated. Empty ⇒ reflect any origin + allow credentials (unsafe). |
+| `CORS_ORIGINS` | strongly | Comma-separated. Empty ⇒ reflect any origin (`origin: true`; credentials are not enabled). |
 | `PUBLIC_URL`, `PORT`, `SESSION_TTL_DAYS`, `MAX_SAVE_SIZE_MB` | no | Defaults exist. |
 | `INITIAL_ADMIN_USERNAME` | no | Empty ⇒ first registered user becomes admin. |
 | `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN` | for passkeys | RP_ID = bare host, ORIGIN = full origin. Passkeys need HTTPS or localhost. |
@@ -62,7 +68,8 @@ docker compose up -d --build
    same stored value is later sent to `/web/launcher-gate`, which checks
    `API_TOKEN`. If the two differ, the launcher login window gets stuck on the
    token gate. Keeping them equal is the supported setup. Both are still
-   mandatory (compose refuses to start without them).
+   mandatory (compose refuses to start without them). Note: `README.md` and
+   `.env.example` still say the two must be different; this rule is newer.
 2. **Rotating `API_TOKEN` invalidates every session token** (they are JWTs
    signed with it) → clients get `401 invalid token` and must log in again. Pick
    the value once and keep it stable.
@@ -96,15 +103,14 @@ Keep `INSTANCE_TOKEN` set and `CORS_ORIGINS` explicit.
   (`BIND_ADDR`), optional Caddy `https` profile (`--profile https`) for
   passkeys/TLS. Both secrets are mandatory via `${VAR:?...}`.
 - CI: `.github/workflows/docker-image.yml` builds `api/` and pushes to
-  `ghcr.io/<owner>/hydra-selfhosted` on push to `main` and on `v*` tags. Only
-  version tags get `:latest`; branch pushes get `:main` / `:sha-<commit>`.
+  `ghcr.io/<owner>/hydra-selfhosted` on push to `main`, on `v*.*.*` tags and on
+  manual dispatch. Only version tags get `:latest`; branch pushes get `:main` /
+  `:sha-<commit>`.
 - Data backups are handled externally (restic in the user's ansible), by
   snapshotting `hydra.db` (via `sqlite3 .backup`) plus the data dirs.
 
 ## Conventions
 
-- **Code and commit messages in English.** Chat may be Russian.
-- **No `Co-Authored-By: Claude` trailer** in commits — the user is sole author.
 - Prefer small, semantic commits (`feat:`, `fix:`, `security:`, `ci:`).
 - Migrations are additive and idempotent (guarded `ALTER TABLE ... catch {}`);
   never rewrite the schema block destructively.
